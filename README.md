@@ -1,6 +1,6 @@
 # otus_patterns_hw4
-Homework 4: Command pattern, behaviour specification without modification
+Homework 5: IoC (inversion of control) container
 
 Language: Python
 
-CI Status: [![build](https://github.com/mihsamusev/otus_patterns_hw4/actions/workflows/build.yaml/badge.svg)](https://github.com/mihsamusev/otus_patterns_hw4/actions/workflows/build.yaml)
+CI Status: [![build](https://github.com/mihsamusev/otus_patterns_hw5/actions/workflows/build.yaml/badge.svg)](https://github.com/mihsamusev/otus_patterns_hw5/actions/workflows/build.yaml)
