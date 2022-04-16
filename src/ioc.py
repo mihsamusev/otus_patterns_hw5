@@ -22,7 +22,7 @@ class IoCRegisterCommand:
     strategy: Callable
 
     def execute(self):
-        active_scope = IoC.resolve("scopes.current")
+        active_scope = ThreadData.current_scope
         if self.key in active_scope.registry:
             raise KeyError(f"{self.key} already registered!")
         active_scope.registry[self.key] = self.strategy
@@ -59,7 +59,7 @@ class SetCurrentScopeCommand:
     scope_name: str
 
     def execute(self):
-        scope = IoC.resolve("scopes.find", self.scope_name).execute()
+        scope = FindScopeCommand(self.scope_name).execute()
         ThreadData.current_scope = scope
         return scope
 
@@ -78,11 +78,11 @@ class NewScopeCommand:
             self.scope_name = str(uuid.uuid4())
 
     def execute(self) -> Scope:
-        parent_scope = IoC.resolve("scopes.find", self.parent_name).execute()
+        parent_scope = FindScopeCommand(self.parent_name).execute()
         new_scope = Scope(
             name=self.scope_name,
             parent=parent_scope,
-            setter_scope=IoC.resolve("scopes.current"),
+            setter_scope=ThreadData.current_scope,
         )
         parent_scope.children.append(new_scope)
         return new_scope
@@ -136,6 +136,9 @@ class Scope:
         return self.__iter_out
 
     def __next__(self):
+        """
+        Iterate from leaf to root
+        """
         if self.__iter_out is None:
             raise StopIteration
         else:
@@ -147,17 +150,19 @@ class Scope:
         """
         RAII scope start
         """
-        current = IoC.resolve("scopes.current")
+        current = ThreadData.current_scope
         if self != current:
             self.setter_scope = current
-            IoC.resolve("scopes.set", self.name).execute()
+            SetCurrentScopeCommand(self.name).execute()
+            # IoC.resolve("scopes.set", self.name).execute()
         return self
 
     def __exit__(self, *args):
         """
         RAII scope end and resource dispose
         """
-        IoC.resolve("scopes.set", self.setter_scope.name).execute()
+        SetCurrentScopeCommand(self.setter_scope.name).execute()
+        # IoC.resolve("scopes.set", self.setter_scope.name).execute()
 
 
 class IoC:
@@ -167,21 +172,22 @@ class IoC:
     key / value registers
     """
 
-    root_scope: Scope = Scope(name="root").with_registry(DEFAULT_SCOPE_REGISTRY)
-    ThreadData.root_scope = root_scope
-    ThreadData.current_scope = root_scope
+    def __init__(self):
+        ...
+        root_scope: Scope = Scope(name="root").with_registry(DEFAULT_SCOPE_REGISTRY)
+        ThreadData.root_scope = root_scope
+        ThreadData.current_scope = root_scope
 
-    @classmethod
-    def resolve(cls, key: str, *args: Any) -> Any:
+    def resolve(self, key: str, *args: Any) -> Any:
         """
-        Recursively resolve dependencies starting from the
-        active scope going towards the root
+        Resolve dependencies starting from the
+        active scope going towards the root scope
         """
         if not ThreadData.current_scope:
             raise ScopeNotSetException()
 
-        for current_scope in ThreadData.current_scope:
-            resolver = current_scope.registry.get(key)
+        for scope in ThreadData.current_scope:
+            resolver = scope.registry.get(key)
             if resolver:
                 return resolver(*args)
 
