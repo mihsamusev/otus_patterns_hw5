@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from src.ioc import IoC
 
 
-class TestIoCRootScope(unittest.TestCase):
+class TestIoCResolve(unittest.TestCase):
     def test_ioc_raises_if_no_dependency_found(self):
         with IoC.resolve("scopes.create", "root").execute():
             self.assertRaises(Exception, IoC.resolve, args=("unknownkey", "arg1", 42))
@@ -17,7 +17,7 @@ class TestIoCRootScope(unittest.TestCase):
                 ("data_structure_2", [(1.5, 2.5), (-2.4, -1000.0)]),
             ]
 
-            # assign free variable value at definition time, not execution time
+            # assign free variable value to lambda at definition time, not execution time
             for key, value in cases:
                 IoC.resolve("ioc.register", key, lambda v=value: v).execute()
 
@@ -69,7 +69,7 @@ class TestIoCRootScope(unittest.TestCase):
             self.assertEqual(IoC.resolve("list_1"), IoC.resolve("list_2"))
 
 
-class TestIoCMultiScope(unittest.TestCase):
+class TestIoCNestedScope(unittest.TestCase):
     def test_registering_value_in_child_scope_does_not_affect_parent(self):
         with IoC.resolve("scopes.create", "root").execute() as test_root:
             new_scope = IoC.resolve("scopes.create", test_root.name).execute()
@@ -93,6 +93,9 @@ class TestIoCMultiScope(unittest.TestCase):
             self.assertEqual(test_root, IoC.resolve("scopes.current"))
             self.assertRaises(Exception, IoC.resolve, "data_new")
 
+        # back to root from 2 contexts
+        self.assertEqual("root", IoC.resolve("scopes.current").name)
+
     def test_context_manager_works_with_interrupted_named_scope(self):
         with IoC.resolve("scopes.create", "root").execute() as test_root:
             with IoC.resolve("scopes.create", test_root.name, "my_scope").execute():
@@ -106,3 +109,5 @@ class TestIoCMultiScope(unittest.TestCase):
                 self.assertEqual(IoC.resolve("data_new"), {"key", "value"})
 
             self.assertRaises(Exception, IoC.resolve, "data_new")
+
+        self.assertEqual("root", IoC.resolve("scopes.current").name)

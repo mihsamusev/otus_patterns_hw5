@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 import uuid
 from collections import deque
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 
 class ThreadData(threading.local):
@@ -14,6 +14,10 @@ class ThreadData(threading.local):
 
 @dataclass
 class IoCRegisterCommand:
+    """
+    Registers a strategy for resolving a specific key with IoC
+    """
+
     key: str
     strategy: Callable
 
@@ -25,35 +29,11 @@ class IoCRegisterCommand:
 
 
 @dataclass
-class SetRootScopeCommand:
-    """
-    Put scope with given name as the root scope
-    """
-
-    scope_name: str
-
-    def execute(self):
-        scope = IoC.resolve("scopes.find", self.scope_name).execute()
-        ThreadData.root_scope = scope
-        return scope
-
-
-@dataclass
-class SetCurrentScopeCommand:
-    """
-    Put scope with given name as current scope
-    """
-
-    scope_name: str
-
-    def execute(self):
-        scope = IoC.resolve("scopes.find", self.scope_name).execute()
-        ThreadData.current_scope = scope
-        return scope
-
-
-@dataclass
 class FindScopeCommand:
+    """
+    Breadth first search through through root_scope tree
+    """
+
     target_name: str
 
     def execute(self) -> Optional[Scope]:
@@ -71,6 +51,20 @@ class FindScopeCommand:
 
 
 @dataclass
+class SetCurrentScopeCommand:
+    """
+    Put scope with given name as current scope
+    """
+
+    scope_name: str
+
+    def execute(self):
+        scope = IoC.resolve("scopes.find", self.scope_name).execute()
+        ThreadData.current_scope = scope
+        return scope
+
+
+@dataclass
 class NewScopeCommand:
     """
     Append scope to the children of active_scope
@@ -79,9 +73,17 @@ class NewScopeCommand:
     parent_name: str
     scope_name: Optional[str] = None
 
+    def __post_init__(self):
+        if not self.scope_name:
+            self.scope_name = str(uuid.uuid4())
+
     def execute(self) -> Scope:
         parent_scope = IoC.resolve("scopes.find", self.parent_name).execute()
-        new_scope = Scope(name=self.scope_name, parent=parent_scope)
+        new_scope = Scope(
+            name=self.scope_name,
+            parent=parent_scope,
+            setter_scope=IoC.resolve("scopes.current"),
+        )
         parent_scope.children.append(new_scope)
         return new_scope
 
@@ -107,19 +109,17 @@ DEFAULT_SCOPE_REGISTRY = {
 }
 
 
+@dataclass
 class Scope:
     """
     Scope of the IoC container
     """
 
-    def __init__(self, name=None, parent: Optional[Scope] = None):
-        self.name = name
-        if self.name is None:
-            self.name = str(uuid.uuid4())
-        self.parent = parent
-        self.children = []
-        self.registry = {}
-        self.__prev_scope = None
+    name: str
+    parent: Optional[Scope] = None
+    setter_scope: Optional[Scope] = None
+    children: List[Scope] = field(default_factory=list)
+    registry: Dict[str, Callable] = field(default_factory=dict)
 
     def with_registry(self, registry: dict) -> Scope:
         """
@@ -147,16 +147,17 @@ class Scope:
         """
         RAII scope start
         """
-        self.__prev_scope = IoC.resolve("scopes.current")
-        IoC.resolve("scopes.set", self.name).execute()
+        current = IoC.resolve("scopes.current")
+        if self != current:
+            self.setter_scope = current
+            IoC.resolve("scopes.set", self.name).execute()
         return self
 
     def __exit__(self, *args):
         """
         RAII scope end and resource dispose
         """
-        IoC.resolve("scopes.set", self.__prev_scope.name).execute()
-        self.__prev_scope = None
+        IoC.resolve("scopes.set", self.setter_scope.name).execute()
 
 
 class IoC:
