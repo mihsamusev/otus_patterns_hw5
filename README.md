@@ -1,4 +1,4 @@
-# otus_patterns_hw4
+# otus_patterns_hw5
 Homework 5: IoC (inversion of control) container
 
 Language: Python
